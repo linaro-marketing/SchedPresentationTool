@@ -3,3 +3,4 @@ presentations/
 other_files/
 resources.json
 secrets.py
+__pycache__/
