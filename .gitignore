@@ -2,3 +2,4 @@ venv/
 presentations/
 other_files/
 resources.json
+secrets.py
