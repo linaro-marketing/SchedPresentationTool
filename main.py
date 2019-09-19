@@ -1,6 +1,6 @@
 from urllib import request
 import os
-import re   
+import re
 import requests
 import json
 # Import the API_KEY variable
@@ -9,11 +9,11 @@ from secrets import SCHED_API_KEY
 from googlesheet import GoogleSheetAPI
 
 class SchedPresentationExportTool:
-    
+
     """
-    This class grabs presentations and other files from the Sched Event Export api 
-    and then downloads and modifies the resources.json file for the current Connect and 
-    uploads newly retreived presentations/files. This should be run daily at the least. 
+    This class grabs presentations and other files from the Sched Event Export api
+    and then downloads and modifies the resources.json file for the current Connect and
+    uploads newly retreived presentations/files. This should be run daily at the least.
     """
 
     def __init__(self, sched_url=None, connect_code="bkk19"):
@@ -34,7 +34,7 @@ class SchedPresentationExportTool:
         self.googlesheet = GoogleSheetAPI(True)
         # Main Method
         self.main()
-    
+
     def main(self):
         """
         Main method for the JekyllSchedExportTool
@@ -68,7 +68,7 @@ class SchedPresentationExportTool:
                     if entry["session_id"] == session["session_id"]:
                         entry["other_files"] = session["other_files"]
                         print("Updated the other files for {}".format(session["session_id"]))
-                        
+
         with open("resources.json", "w") as updatedResourcesFile:
             updatedResourcesFile.writelines(json.dumps(resourcesJson))
 
@@ -77,12 +77,13 @@ class SchedPresentationExportTool:
         print("aws s3 --profile connect-linaro-org-Owner cp resources.json s3://connect.linaro.org/{}/resources.json".format(self.connect_code))
         input("Press enter to continue...")
 
-        return True        
+        return True
     def get_api_results(self, endpoint):
         """
             Gets the results from a specified endpoint
         """
         endpoint = self.sched_url + endpoint.format(self.API_KEY)
+        print(endpoint)
         try:
             resp = requests.get(url=endpoint)
             data = resp.json()
@@ -99,7 +100,7 @@ class SchedPresentationExportTool:
         self.missing_presentations =  []
         sessions = []
         for session in export_data:
-            
+
             # Get the title of the session - to retrieve the session ID.
             session_title = session["name"]
 
@@ -116,7 +117,7 @@ class SchedPresentationExportTool:
                 # Get the session id from the title
                 try:
                     # Compile the session ID regex
-                    session_id_regex = re.compile('BKK19-[A-Za-z]*[0-9]+K*[0-9]*')
+                    session_id_regex = re.compile('SAN19-[A-Za-z]*[0-9]+K*[0-9]*')
                     # Get the first item found based on the regex
                     session_id = session_id_regex.findall(session_title)[0]
                     # Set skipping to False so the script continues
@@ -154,13 +155,13 @@ class SchedPresentationExportTool:
                                 # Add output folder to output path - prepend the session_id as a unique identifier
                                 # All files are stored in the same bucket so if two users upload a file named presentation.pptx
                                 # then one would write over the other.
-                                output_filename = "{0}-{1}".format(session_id, session_file["name"]) 
+                                output_filename = "{0}-{1}".format(session_id, session_file["name"])
                                 # Append the new file to the other files array
                                 other_files.append(output_filename)
 
                             # Download the file
                             downloaded = self.grab_file(session_id, session_file["path"], output_filename, output_folder)
-                        
+
                         if found_pdf == False:
                             try:
                                 speakers = session["speakers"]
@@ -184,7 +185,7 @@ class SchedPresentationExportTool:
                         speakers = self.getDetailedSpeakers(speakers)
                     self.missing_presentations.append([session_id, speakers])
                     print("No files found for {}".format(session_id))
-        
+
         print("Please sync the presentations folder using the command below:")
         print("aws s3 --profile connect-linaro-org-Owner cp presentations/ s3://connect.linaro.org/{}/presentations/ --recursive".format(self.connect_code))
         input("Press enter to continue...")
@@ -203,11 +204,14 @@ class SchedPresentationExportTool:
         """
         Gets detailed speakers array
         """
-        for speaker in speakers:
-            for user in self.users_data:
-                if speaker["username"] == user["username"]:
-                    speaker["email"] = user["email"]
-        return speakers
+        try:
+            for speaker in speakers:
+                for user in self.users_data:
+                    if speaker["username"] == user["username"]:
+                        speaker["email"] = user["email"]
+            return speakers
+        except KeyError:
+            return "Invalid"
     def grab_file(self, session_id, url, output_filename, output_path="speaker_images/"):
         """
         Fetches attendee photo from the pathable data
@@ -220,24 +224,42 @@ class SchedPresentationExportTool:
             opener = request.build_opener()
             opener.addheaders = [('User-agent', 'Mozilla/5.0')]
             request.install_opener(opener)
-            download_file = request.urlretrieve(url, output)
-            if self._verbose:
-                print("Downloaded {}".format(output_filename), download_file)
+            # Check to see if file doesn't exist locally.
+            if not os.path.exists(output):
+                download_file = request.urlretrieve(url, output)
+                if self._verbose:
+                    print("Downloaded {}".format(output_filename), download_file)
+            # If file exists
+            else:
+                # Check headers and get Content-Length
+                header_check_request = request.urlopen(url)
+                server_size = header_check_request.headers['Content-Length']
+                # Get size of local file
+                local_size = os.path.getsize(output)
+                # Check to see if file size differs and if it does - download the updated file
+                print("{0} vs {1}".format(local_size, server_size))
+                if int(server_size) != int(local_size):
+                    print("File size does not match so downloading new file for {0}".format(session_id))
+                    download_file = request.urlretrieve(url, output)
+                # If matches file size on server then do nothing but output a warning if verbose
+                else:
+                    # check difference between two files
+                    if self._verbose:
+                        print("Skipping download for {0}".format(output_filename))
             return True
         except Exception as e:
             print(e)
-            image = False
             return False
 
     def updateGooglesheet(self):
-        """ 
+        """
         Updates a Googlesheet defined in googlesheet.py with a list of sessions that are
         missing presentations
         """
-        
+
         self.googlesheet.updateGoogleSheet(self.missing_presentations)
-        
+
 if __name__ == "__main__":
-    
-    presentations = SchedPresentationExportTool("https://bkk19.sched.com", "bkk19")
+
+    presentations = SchedPresentationExportTool("https://linaroconnectsandiego.sched.com", "san19")
     presentations.updateGooglesheet()

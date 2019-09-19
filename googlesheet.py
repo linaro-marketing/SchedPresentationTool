@@ -62,15 +62,15 @@ class GoogleSheetAPI:
         return result
 
     def updateValues(self, range_name, values):
-        values = [
-            values
-        ]
         body = {
-            'values': values
+            "range": range_name,
+            "majorDimension": "ROWS",
+            "values": [
+                values
+            ]
         }
-        result = self.service.spreadsheets().values().update(
-            spreadsheetId=self._spreadsheet_id, range=range_name,
-            valueInputOption=self._value_input_option[0], body=body).execute()
+        result = self.service.spreadsheets().values().batchUpdate(
+            spreadsheetId=self._spreadsheet_id, body=body).execute()
 
         return result
 
@@ -87,7 +87,8 @@ class GoogleSheetAPI:
                     email_list += speaker["email"] + ","
                 email_list.rstrip(",")
             data.append([session_id, email_list[0:-1]])
-        
+        print(data)
+        input()
         self.updateValues(sheet_range, data)
 
 
