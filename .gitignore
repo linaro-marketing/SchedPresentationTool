@@ -4,3 +4,5 @@ other_files/
 resources.json
 secrets.py
 __pycache__/
+token.json
+client_secret*.json
