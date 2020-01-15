@@ -6,9 +6,6 @@ import requests
 from requests.utils import requote_uri
 from sched_data_interface import SchedDataInterface
 import json
-# Import the API_KEY variable
-# Your API_KEY can be fetched from the https://event_name.sched.com/editor/exports/api
-from secrets import SCHED_API_KEY
 
 class SchedPresentationTool:
 
@@ -141,4 +138,4 @@ class SchedPresentationTool:
 if __name__ == "__main__":
 
     presentations = SchedPresentationTool(
-        "https://linaroconnectsandiego.sched.com", "san19", SCHED_API_KEY)
+        "https://linaroconnectsandiego.sched.com", "san19", "yourapikey")
