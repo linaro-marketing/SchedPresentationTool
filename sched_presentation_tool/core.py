@@ -17,7 +17,12 @@ class SchedPresentationTool:
     def __init__(self, presentations_directory, other_files_directory, json_data):
 
         self.presentations_directory = presentations_directory
+        if not os.path.exists(self.presentations_directory):
+            os.makedirs(self.presentations_directory)
         self.other_files_directory = other_files_directory
+        if not os.path.exists(self.other_files_directory):
+            os.makedirs(self.other_files_directory)
+
         self.json_data = json_data
 
     def download(self):
@@ -43,7 +48,7 @@ class SchedPresentationTool:
                         output_folder = self.other_files_directory
                     # Download the file
                     all_files.append(output_file_name)
-                    status = self.download_fiule(file_path, output_folder, output_file_name)
+                    status = self.download_file(file_path, output_folder, output_file_name)
                     if status == "downloaded":
                         print("Downloaded {} to {}...".format(output_file_name, output_folder))
                     elif status == "updated":
@@ -78,9 +83,6 @@ class SchedPresentationTool:
         Fetches attendee photo from the pathable data
         """
         # Download pdf presentations
-        # Check to see if the output folder exists and create if not.
-        if not os.path.exists(output_folder):
-            os.makedirs(output_folder)
         # Compose the output file path + filename
         output = output_folder + output_filename
         # Encode the url
