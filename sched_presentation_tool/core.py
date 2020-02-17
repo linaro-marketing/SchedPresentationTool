@@ -10,93 +10,81 @@ import json
 class SchedPresentationTool:
 
     """
-    This class grabs presentations and other files from the Sched Event Export api
-    and then downloads and modifies the resources.json file for the current Connect and
-    uploads newly retreived presentations/files. This should be run daily at the least.
+    This class downloads new presentations and other files from the Sched Event API
+    using the provided json_data.
     """
 
-    def __init__(self, sched_url, connect_code, SCHED_API_KEY):
+    def __init__(self, presentations_directory, other_files_directory, json_data):
 
-        # Verbose output toggle
-        self._verbose = False
-        # Current Connect Code
-        self.connect_code = connect_code
-        # Sched.com url
-        self.sched_url = sched_url
-        # Sched.com API Key
-        self.API_KEY = SCHED_API_KEY
-        # Sched Data Interface
-        self.sched_data_interface = SchedDataInterface(self.sched_url, self.API_KEY, self.connect_code)
-        self.export_data = self.sched_data_interface.getExportData()
-        # Main Method
-        self.download_session_files(self.export_data)
+        self.presentations_directory = presentations_directory
+        self.other_files_directory = other_files_directory
+        self.json_data = json_data
 
-
-    def download_session_files(self, export_data):
+    def download(self):
         """
         This method grabs the files/session_id's for each session and updates the resources.json file
         in s3.
         """
-        sessions = []
-        for session in export_data.values():
-            # Get the title of the session - to retrieve the session ID.
-            session_id = session["session_id"]
-            print("{}: ".format(session_id), end="", flush=True)
-            # Create a new dict for updating the resources.json file with other_files list
-            resources_session_data = {
-                "session_id": session_id,
-                "other_files": ""
-            }
+        all_files = []
+        print("Downloading session files...")
+        for session in self.json_data.values():
             try:
-                if session["files"]:
-                    # Create a new other_files list for storing the non-pdf files
-                    other_files = []
-                    # Loop over all the files for this session
-                    for session_file in session["files"]:
-                        # Check if the file name endswith .pdf
-                        if session_file["name"].endswith(".pdf"):
-                            # Set output folder to presentations/
-                            output_folder = "presentations/"
-                            output_filename = session_id.lower() + ".pdf"
-                            print("PDF", end="", flush=True)
-                        # File is not a pdf so add to the other files array
-                        else:
-                            # Change the output folder for syncing to the other files folder on s3
-                            output_folder = "other_files/"
-                            # Add output folder to output path - prepend the session_id as a unique identifier
-                            # All files are stored in the same bucket so if two users upload a file named presentation.pptx
-                            # then one would write over the other.
-                            output_filename = "{0}-{1}".format(
-                                session_id, session_file["name"])
-                            # Append the new file to the other files array
-                            other_files.append(output_filename)
-                            print("OtherFile ", end="", flush=True)
-                        # Download the file
-                        self.grab_file(
-                            session_id, session_file["path"], output_filename, output_folder)
-                    # Set the other files key to the array of other files
-                    resources_session_data["other_files"] = other_files
-                # Add to main list of sessions to update resources.json with.
-                sessions.append(resources_session_data)
-
-            except KeyError:
-                print("None", flush=True)
+                for session_file_index in range(0, len(session["files"])):
+                    file_path = session["files"][session_file_index]["path"]
+                    file_name = session["files"][session_file_index]["name"]
+                    output_file_name = ""
+                    output_folder = ""
+                    if ".pdf" in file_name:
+                        output_file_name = "{}-{}.pdf".format(session["session_id"], session_file_index)
+                        output_folder = self.presentations_directory
+                    else:
+                        file_extension = os.path.splitext(file_name)[1]
+                        output_file_name = "{}-{}{}".format(session["session_id"], session_file_index, file_extension)
+                        output_folder = self.other_files_directory
+                    # Download the file
+                    all_files.append(output_file_name)
+                    status = self.download_fiule(file_path, output_folder, output_file_name)
+                    if status == "downloaded":
+                        print("Downloaded {} to {}...".format(output_file_name, output_folder))
+                    elif status == "updated":
+                        print("Downloaded updated file {} to {}...".format(
+                            output_file_name, output_folder))
+                    elif status == "skipped":
+                        print("Skipped download of {} to {} as there was no change...".format(output_file_name, output_folder))
+                    else:
+                        print("Download for {} to {} has failed...".format(output_file_name, output_folder))
+            except Exception as e:
                 pass
-            print("",flush=True)
+        print("Removing old presentations...")
+        self.remove_old_files(self.presentations_directory, all_files)
+        print("Removing old other_files...")
+        self.remove_old_files(self.other_files_directory, all_files)
 
-        return sessions
+    def remove_old_files(self, folder, all_files_list):
+        changed = False
+        for file_name in os.listdir(folder):
+            if file_name not in all_files_list:
+                file_path = os.path.join(folder, file_name)
+                os.remove(file_path)
+                print("Deleted {}...".format(file_path))
+                changed = True
+        if not changed:
+            print("No files to delete.")
+        return True
 
-    def grab_file(self, session_id, url, output_filename, output_path="speaker_images/"):
+
+    def download_file(self, file_url, output_folder, output_filename):
         """
         Fetches attendee photo from the pathable data
         """
+        # Download pdf presentations
         # Check to see if the output folder exists and create if not.
-        if not os.path.exists(output_path):
-            os.makedirs(output_path)
+        if not os.path.exists(output_folder):
+            os.makedirs(output_folder)
         # Compose the output file path + filename
-        output = output_path + output_filename
+        output = output_folder + output_filename
         # Encode the url
-        encoded_url = requote_uri(url)
+        encoded_url = requote_uri(file_url)
         # Try to download the image and Except errors and return as false.
         try:
             opener = request.build_opener()
@@ -105,9 +93,7 @@ class SchedPresentationTool:
             # Check to see if the file exists locally.
             if not os.path.exists(output):
                 download_file = request.urlretrieve(encoded_url, output)
-                if self._verbose:
-                    print("Downloaded {}".format(
-                        output_filename), download_file)
+                status = "downloaded"
             # If file exists compare local file size with remote file size before downloading again
             else:
                 header_check_request = request.urlopen(encoded_url)
@@ -115,27 +101,16 @@ class SchedPresentationTool:
                 server_size = header_check_request.headers['Content-Length']
                 # Get size of local file
                 local_size = os.path.getsize(output)
-                if self._verbose:
-                    print("Comparing filesize: {0}B vs {1}B".format(local_size, server_size))
                 # Check to see if file size differs and if it does - download the updated file
                 if int(server_size) != int(local_size):
-                    if self._verbose:
-                        print(
-                            "Downloading updated presentation for {0}".format(session_id))
                     download_file = request.urlretrieve(encoded_url, output)
+                    status = "updated"
                 # If matches file size on server then do nothing but output a warning if verbose
                 else:
                     # check difference between two files
-                    if self._verbose:
-                        print("Skipping download for {0}".format(
-                            output_filename))
-            return True
+                    status = "skipped"
+            return status
         except Exception as e:
             print(e)
-            return False
-
-
-if __name__ == "__main__":
-
-    presentations = SchedPresentationTool(
-        "https://linaroconnectsandiego.sched.com", "san19", "yourapikey")
+            status = "failed"
+            return status
