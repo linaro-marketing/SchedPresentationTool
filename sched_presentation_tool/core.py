@@ -133,9 +133,3 @@ class SchedPresentationTool:
         except Exception as e:
             print(e)
             return False
-
-
-if __name__ == "__main__":
-
-    presentations = SchedPresentationTool(
-        "https://linaroconnectsandiego.sched.com", "san19", "yourapikey")
