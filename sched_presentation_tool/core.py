@@ -43,7 +43,7 @@ class SchedPresentationTool:
                         output_folder = self.other_files_directory
                     # Download the file
                     all_files.append(output_file_name)
-                    status = self.download_fiule(file_path, output_folder, output_file_name)
+                    status = self.download_file(file_path, output_folder, output_file_name)
                     if status == "downloaded":
                         print("Downloaded {} to {}...".format(output_file_name, output_folder))
                     elif status == "updated":
